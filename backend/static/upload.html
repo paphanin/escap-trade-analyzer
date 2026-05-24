@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upload — ESCAP Trade Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="/app.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<nav class="bg-slate-900 text-white px-6 py-3 flex items-center gap-8">
+  <span class="font-semibold tracking-wide text-sm">ESCAP Trade Analyzer</span>
+  <a href="/" class="text-sm text-slate-400 hover:text-white transition-colors">Dashboard</a>
+  <a href="/upload.html" class="text-sm text-white font-medium border-b border-white pb-0.5">Upload</a>
+  <a href="/chat.html" class="text-sm text-slate-400 hover:text-white transition-colors">Chat</a>
+</nav>
+
+<main x-data="uploadPage()" class="max-w-2xl mx-auto px-6 py-10">
+  <h1 class="text-2xl font-semibold text-slate-900 mb-1">Upload Regulatory Document</h1>
+  <p class="text-sm text-slate-500 mb-8">PDF only. The system will parse each page with AI and extract provisions with exact citations.</p>
+
+  <!-- Drop zone -->
+  <div
+    class="border-2 border-dashed rounded-xl p-10 text-center transition-colors cursor-pointer"
+    :class="dragging ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-white hover:border-blue-300'"
+    @dragover.prevent="dragging = true"
+    @dragleave.prevent="dragging = false"
+    @drop.prevent="onDrop($event)"
+    @click="$refs.fileInput.click()">
+    <input type="file" accept=".pdf" class="hidden" x-ref="fileInput" @change="onFileChange($event)" />
+
+    <svg class="w-10 h-10 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+    </svg>
+
+    <p x-show="!file" class="text-slate-500 text-sm">Drag & drop a PDF, or <span class="text-blue-600 underline">browse</span></p>
+    <p x-show="file" class="text-slate-700 text-sm font-medium" x-text="file && file.name"></p>
+  </div>
+
+  <!-- Metadata -->
+  <div x-show="file" class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Document Metadata</h2>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Country / Jurisdiction</label>
+        <input type="text" x-model="form.country" placeholder="e.g. Thailand"
+               class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Treaty / Act Name</label>
+        <input type="text" x-model="form.treaty_name" placeholder="e.g. PDPA 2019"
+               class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Year</label>
+        <input type="number" x-model="form.year" placeholder="e.g. 2022"
+               class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Primary Category</label>
+        <select x-model="form.category"
+                class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">— Select —</option>
+          <option value="data_privacy">Data Privacy</option>
+          <option value="e_commerce">E-Commerce</option>
+          <option value="intellectual_property">IP & Copyright</option>
+          <option value="customs">Customs</option>
+          <option value="general_trade">General Trade</option>
+          <option value="dispute_resolution">Dispute Resolution</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div x-show="uploading" class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <svg class="animate-spin w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+      </svg>
+      <p class="text-sm text-blue-700" x-text="statusMsg"></p>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3" x-text="error"></div>
+
+  <!-- Submit -->
+  <button
+    x-show="file"
+    @click="submit()"
+    :disabled="uploading"
+    class="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+    Upload &amp; Analyse
+  </button>
+</main>
+
+<script>
+function uploadPage() {
+  return {
+    file: null,
+    dragging: false,
+    uploading: false,
+    error: null,
+    statusMsg: 'Uploading…',
+    form: { country: '', treaty_name: '', year: '', category: '' },
+
+    onDrop(e) {
+      this.dragging = false;
+      const f = e.dataTransfer.files[0];
+      if (f && f.name.endsWith('.pdf')) this.file = f;
+      else this.error = 'Only PDF files are supported.';
+    },
+    onFileChange(e) {
+      this.file = e.target.files[0] || null;
+      this.error = null;
+    },
+
+    async submit() {
+      if (!this.file) return;
+      this.uploading = true;
+      this.error = null;
+      this.statusMsg = 'Uploading file…';
+
+      const fd = new FormData();
+      fd.append('file', this.file);
+      Object.entries(this.form).forEach(([k, v]) => fd.append(k, v));
+
+      try {
+        const doc = await uploadDocument(fd);
+        this.statusMsg = 'Upload complete. AI is parsing the document — redirecting…';
+        setTimeout(() => { window.location.href = `/review.html?id=${doc.id}`; }, 1200);
+      } catch (e) {
+        this.error = e.message;
+        this.uploading = false;
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>

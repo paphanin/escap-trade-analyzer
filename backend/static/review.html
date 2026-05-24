@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review — ESCAP Trade Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="/app.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<nav class="bg-slate-900 text-white px-6 py-3 flex items-center gap-8">
+  <span class="font-semibold tracking-wide text-sm">ESCAP Trade Analyzer</span>
+  <a href="/" class="text-sm text-slate-400 hover:text-white transition-colors">Dashboard</a>
+  <a href="/upload.html" class="text-sm text-slate-400 hover:text-white transition-colors">Upload</a>
+  <a href="/chat.html" class="text-sm text-slate-400 hover:text-white transition-colors">Chat</a>
+</nav>
+
+<div x-data="reviewPage()" x-init="init()" class="max-w-4xl mx-auto px-6 py-8">
+
+  <!-- Processing banner -->
+  <div x-show="doc && ['processing','extracting'].includes(doc.status)"
+       class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+    <svg class="animate-spin w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+    </svg>
+    <p class="text-sm text-blue-700">
+      AI is <span x-text="doc && doc.status === 'processing' ? 'parsing pages' : 'extracting provisions'"></span>
+      — this page will refresh automatically.
+    </p>
+  </div>
+
+  <!-- Header -->
+  <div x-show="doc" class="flex items-start justify-between mb-4 gap-4">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900" x-text="doc && doc.filename"></h1>
+      <div class="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+        <span x-show="doc && doc.doc_metadata.country" x-text="doc && doc.doc_metadata.country"></span>
+        <span x-show="doc && doc.doc_metadata.treaty_name" x-text="doc && doc.doc_metadata.treaty_name"></span>
+        <span x-show="doc && doc.total_pages" x-text="doc && `${doc.total_pages} pages`"></span>
+      </div>
+    </div>
+    <!-- Progress -->
+    <div x-show="doc && doc.extraction_count > 0" class="text-right flex-shrink-0">
+      <p class="text-sm font-medium text-slate-700">
+        <span x-text="doc && (doc.extraction_count - doc.pending_count)"></span>/<span x-text="doc && doc.extraction_count"></span> reviewed
+      </p>
+      <div class="w-40 h-2 bg-slate-200 rounded-full mt-1 overflow-hidden">
+        <div class="h-2 bg-blue-500 rounded-full transition-all"
+             :style="`width: ${doc ? Math.round(((doc.extraction_count - doc.pending_count) / Math.max(doc.extraction_count,1)) * 100) : 0}%`"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter tabs + Accept all -->
+  <div x-show="doc && doc.status === 'parsed'" class="flex items-center justify-between mb-4">
+    <div class="flex gap-1 bg-white border border-slate-200 rounded-lg p-1">
+      <template x-for="tab in ['all','pending','accepted','edited','source_edited','declined']" :key="tab">
+        <button @click="filterTab = tab; loadExtractions()"
+                class="text-xs px-3 py-1.5 rounded-md transition-colors font-medium capitalize"
+                :class="filterTab === tab ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700'"
+                x-text="tab.replace('_',' ')">
+        </button>
+      </template>
+    </div>
+    <button x-show="doc && doc.pending_count > 0"
+            @click="acceptAllExtractions()"
+            class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors font-medium">
+      Accept All Pending
+    </button>
+  </div>
+
+  <!-- Error -->
+  <div x-show="error" class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-4" x-text="error"></div>
+
+  <!-- Loading -->
+  <div x-show="loading" class="text-center py-12 text-slate-400 text-sm">Loading extractions…</div>
+
+  <!-- Empty -->
+  <div x-show="!loading && extractions.length === 0 && doc && doc.status === 'parsed'"
+       class="text-center py-16 text-slate-400 text-sm bg-white rounded-xl border border-slate-200">
+    No extractions match this filter.
+  </div>
+
+  <!-- Extraction cards -->
+  <div class="space-y-4">
+    <template x-for="ext in extractions" :key="ext.id">
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden transition-all"
+           :class="ext.status === 'declined' ? 'opacity-50' : ''">
+
+        <!-- Card header -->
+        <div class="flex items-center justify-between px-5 pt-4 pb-2 gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold text-slate-800" x-text="ext.article_ref || 'Unknown Article'"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                  :class="categoryBadgeClass(ext.category)"
+                  x-text="labelCategory(ext.category)"></span>
+            <span x-show="ext.page_number" class="text-xs text-slate-400" x-text="`p.${ext.page_number}`"></span>
+            <span x-show="ext.lang && ext.lang !== 'en'"
+                  class="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700 uppercase"
+                  x-text="ext.lang"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                  :class="statusBadgeClass(ext.status)"
+                  x-text="labelStatus(ext.status)"></span>
+          </div>
+          <!-- Confidence -->
+          <div class="flex items-center gap-2">
+            <div class="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-1.5 rounded-full transition-all" :class="confidenceColor(ext.confidence)"
+                   :style="`width: ${Math.round(ext.confidence * 100)}%`"></div>
+            </div>
+            <span class="text-xs text-slate-500" x-text="`${Math.round(ext.confidence * 100)}%`"></span>
+          </div>
+        </div>
+
+        <!-- Text area -->
+        <div class="px-5 pb-3">
+          <!-- Normal view -->
+          <div x-show="editingId !== ext.id && sourceViewId !== ext.id">
+            <p class="text-sm text-slate-700 leading-relaxed"
+               x-text="ext.edited_text || ext.text"></p>
+            <p class="text-xs text-slate-400 mt-2 font-mono" x-text="ext.citation"></p>
+          </div>
+
+          <!-- Edit view -->
+          <div x-show="editingId === ext.id">
+            <textarea x-model="editBuffer"
+                      class="w-full text-sm border border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                      rows="5"></textarea>
+            <p class="text-xs text-slate-400 mt-1 font-mono" x-text="ext.citation"></p>
+          </div>
+
+          <!-- Source view -->
+          <div x-show="sourceViewId === ext.id" class="space-y-3">
+            <div class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+              <div class="px-3 py-1.5 bg-slate-100 border-b border-slate-200 text-xs text-slate-500">
+                Original page <span x-text="ext.page_number || '?'"></span>
+              </div>
+              <img :src="ext.page_number ? `/api/documents/${ext.document_id}/page/${ext.page_number}` : ''"
+                   class="w-full" alt="Source page" />
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-600 mb-1">Edit extraction (with source above for reference):</p>
+              <textarea x-model="editBuffer"
+                        class="w-full text-sm border border-indigo-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                        rows="5"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action bar -->
+        <div class="border-t border-slate-100 px-5 py-2.5 flex items-center gap-2 bg-slate-50 flex-wrap">
+
+          <!-- Default actions (pending or revisit) -->
+          <template x-if="editingId !== ext.id && sourceViewId !== ext.id">
+            <div class="flex items-center gap-2 flex-wrap">
+              <button x-show="ext.status !== 'accepted'"
+                      @click="doAction(ext, 'accept')"
+                      class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors font-medium">
+                Accept
+              </button>
+              <button @click="startEdit(ext)"
+                      class="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors font-medium">
+                Edit
+              </button>
+              <button x-show="ext.status !== 'declined'"
+                      @click="doAction(ext, 'decline')"
+                      class="text-xs bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors font-medium">
+                Decline
+              </button>
+              <button x-show="ext.page_number"
+                      @click="startSourceEdit(ext)"
+                      class="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors font-medium">
+                Edit Source
+              </button>
+            </div>
+          </template>
+
+          <!-- Edit save/cancel -->
+          <template x-if="editingId === ext.id">
+            <div class="flex items-center gap-2">
+              <button @click="saveEdit(ext, 'edit')"
+                      class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                Save Edit
+              </button>
+              <button @click="cancelEdit()"
+                      class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </template>
+
+          <!-- Source-edit save/cancel -->
+          <template x-if="sourceViewId === ext.id">
+            <div class="flex items-center gap-2">
+              <button @click="saveEdit(ext, 'source_edit')"
+                      class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+                Save Source Edit
+              </button>
+              <button @click="cancelEdit()"
+                      class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </template>
+
+          <!-- Busy indicator -->
+          <span x-show="busyId === ext.id" class="text-xs text-slate-400 ml-auto">Saving…</span>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Go to chat CTA -->
+  <div x-show="doc && doc.accepted_count > 0" class="mt-8 bg-green-50 border border-green-200 rounded-xl p-5 flex items-center justify-between gap-4">
+    <div>
+      <p class="text-sm font-semibold text-green-800" x-text="`${doc && doc.accepted_count} provisions indexed in the knowledge base.`"></p>
+      <p class="text-xs text-green-600 mt-0.5">You can now ask questions across all indexed documents.</p>
+    </div>
+    <a href="/chat.html" class="text-sm bg-green-700 text-white px-4 py-2 rounded-lg hover:bg-green-800 transition-colors font-medium flex-shrink-0">
+      Open Chat
+    </a>
+  </div>
+</div>
+
+<script>
+function reviewPage() {
+  const params = new URLSearchParams(window.location.search);
+  const docId = params.get('id');
+
+  return {
+    doc: null,
+    extractions: [],
+    filterTab: 'all',
+    loading: true,
+    error: null,
+    editingId: null,
+    sourceViewId: null,
+    editBuffer: '',
+    busyId: null,
+    pollTimer: null,
+
+    async init() {
+      if (!docId) { this.error = 'No document ID in URL.'; this.loading = false; return; }
+      await this.loadDoc();
+      await this.loadExtractions();
+      this.loading = false;
+      this.pollTimer = setInterval(() => this.poll(), 5000);
+    },
+
+    async loadDoc() {
+      try { this.doc = await getDocument(docId); }
+      catch (e) { this.error = e.message; }
+    },
+
+    async loadExtractions() {
+      try {
+        const s = this.filterTab === 'all' ? null : this.filterTab;
+        this.extractions = await getExtractions(docId, s);
+      } catch (e) { this.error = e.message; }
+    },
+
+    async poll() {
+      if (!this.doc || !['processing','extracting'].includes(this.doc.status)) return;
+      await this.loadDoc();
+      if (this.doc.status === 'parsed') await this.loadExtractions();
+    },
+
+    startEdit(ext) {
+      this.editingId = ext.id;
+      this.sourceViewId = null;
+      this.editBuffer = ext.edited_text || ext.text;
+    },
+
+    startSourceEdit(ext) {
+      this.sourceViewId = ext.id;
+      this.editingId = null;
+      this.editBuffer = ext.edited_text || ext.text;
+    },
+
+    cancelEdit() { this.editingId = null; this.sourceViewId = null; this.editBuffer = ''; },
+
+    async doAction(ext, action) {
+      this.busyId = ext.id;
+      try {
+        const updated = await updateExtraction(ext.id, action);
+        Object.assign(ext, updated);
+        await this.loadDoc();
+      } catch (e) { this.error = e.message; }
+      this.busyId = null;
+    },
+
+    async saveEdit(ext, action) {
+      const text = this.editBuffer.trim();
+      if (!text) return;
+      this.busyId = ext.id;
+      try {
+        const updated = await updateExtraction(ext.id, action, text);
+        Object.assign(ext, updated);
+        this.cancelEdit();
+        await this.loadDoc();
+      } catch (e) { this.error = e.message; }
+      this.busyId = null;
+    },
+
+    async acceptAllExtractions() {
+      if (!confirm('Accept all pending extractions and add them to the knowledge base?')) return;
+      try {
+        const result = await acceptAll(docId);
+        alert(`${result.accepted} extractions accepted.`);
+        await this.loadDoc();
+        await this.loadExtractions();
+      } catch (e) { this.error = e.message; }
+    },
+
+    statusBadgeClass, categoryBadgeClass, labelStatus, labelCategory, confidenceColor,
+  };
+}
+</script>
+</body>
+</html>

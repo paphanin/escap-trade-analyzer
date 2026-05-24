@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat — ESCAP Trade Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="/app.js"></script>
+  <style>
+    .chat-area { height: calc(100vh - 200px); }
+    .prose-sm p { margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col">
+
+<nav class="bg-slate-900 text-white px-6 py-3 flex items-center gap-8 flex-shrink-0">
+  <span class="font-semibold tracking-wide text-sm">ESCAP Trade Analyzer</span>
+  <a href="/" class="text-sm text-slate-400 hover:text-white transition-colors">Dashboard</a>
+  <a href="/upload.html" class="text-sm text-slate-400 hover:text-white transition-colors">Upload</a>
+  <a href="/chat.html" class="text-sm text-white font-medium border-b border-white pb-0.5">Chat</a>
+</nav>
+
+<div x-data="chatPage()" x-init="init()" class="flex flex-1 overflow-hidden max-w-5xl w-full mx-auto px-4 py-4 gap-4">
+
+  <!-- Sidebar -->
+  <aside class="w-56 flex-shrink-0 space-y-4">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Knowledge Base</p>
+      <p class="text-2xl font-semibold text-slate-900" x-text="indexedCount"></p>
+      <p class="text-xs text-slate-500 mt-0.5">indexed provisions</p>
+      <a href="/" class="block mt-3 text-xs text-blue-600 hover:underline">Add documents →</a>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Expert Modules</p>
+      <ul class="space-y-1 text-xs text-slate-600">
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>ASEAN Regulatory</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-violet-400 flex-shrink-0"></span>East Asia Trade</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>IP &amp; Copyright</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>Harmonisation</li>
+      </ul>
+      <p class="text-xs text-slate-400 mt-2">Auto-routed per query</p>
+    </div>
+
+    <button @click="clearChat()" class="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors text-left px-1">
+      Clear conversation
+    </button>
+  </aside>
+
+  <!-- Chat panel -->
+  <div class="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden">
+
+    <!-- Messages -->
+    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-5 chat-area" x-ref="msgContainer">
+
+      <!-- Welcome -->
+      <div x-show="messages.length === 0" class="flex flex-col items-center justify-center h-full text-center py-12">
+        <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-3">
+          <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+          </svg>
+        </div>
+        <p class="text-slate-600 text-sm font-medium">Ask about digital trade regulations</p>
+        <p class="text-slate-400 text-xs mt-1 max-w-xs">
+          Responses are grounded exclusively in accepted provisions from your document library.
+        </p>
+        <div class="mt-4 grid grid-cols-1 gap-2 max-w-sm w-full">
+          <template x-for="hint in hints" :key="hint">
+            <button @click="input = hint; send()"
+                    class="text-xs text-left bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-100 transition-colors text-slate-600">
+              <span x-text="hint"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <template x-for="(msg, i) in messages" :key="i">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+
+          <!-- User bubble -->
+          <div x-show="msg.role === 'user'"
+               class="bg-blue-600 text-white text-sm rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md">
+            <p x-text="msg.content"></p>
+          </div>
+
+          <!-- AI bubble -->
+          <div x-show="msg.role === 'assistant'" class="max-w-2xl w-full">
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3">
+              <!-- Expert badge -->
+              <div x-show="msg.expert_used" class="flex items-center gap-1.5 mb-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span class="text-xs text-slate-500" x-text="msg.expert_used"></span>
+              </div>
+              <!-- Content -->
+              <div class="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap" x-text="msg.content"></div>
+            </div>
+
+            <!-- Citations -->
+            <div x-show="msg.citations && msg.citations.length > 0" class="mt-2 space-y-1">
+              <p class="text-xs text-slate-400 px-1" x-text="`${msg.citations ? msg.citations.length : 0} source${msg.citations && msg.citations.length !== 1 ? 's' : ''}`"></p>
+              <template x-for="(cit, ci) in (msg.citations || [])" :key="cit.id">
+                <details class="bg-white border border-slate-200 rounded-lg text-xs overflow-hidden">
+                  <summary class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="font-medium text-slate-600 shrink-0" x-text="`[${ci+1}]`"></span>
+                      <span class="text-slate-700 truncate" x-text="cit.article_ref || cit.citation"></span>
+                      <span class="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            :class="categoryBadgeClass(cit.category)"
+                            x-text="labelCategory(cit.category)"></span>
+                    </div>
+                    <span class="text-slate-400 ml-2 flex-shrink-0" x-text="`${Math.round(cit.score * 100)}%`"></span>
+                  </summary>
+                  <div class="px-3 py-2 border-t border-slate-100 bg-slate-50">
+                    <p class="text-slate-500 font-mono text-xs mb-1" x-text="cit.citation"></p>
+                    <p class="text-slate-700 leading-relaxed" x-text="cit.text"></p>
+                  </div>
+                </details>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Typing indicator -->
+      <div x-show="thinking" class="flex justify-start">
+        <div class="bg-slate-100 rounded-2xl px-4 py-3 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay:0ms"></span>
+          <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay:150ms"></span>
+          <span class="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style="animation-delay:300ms"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div x-show="error" class="px-5 py-2 bg-red-50 border-t border-red-200 text-red-600 text-xs" x-text="error"></div>
+
+    <!-- Input -->
+    <div class="border-t border-slate-200 p-4 flex gap-3">
+      <textarea
+        x-model="input"
+        @keydown.enter.prevent="if(!$event.shiftKey) send()"
+        placeholder="Ask about digital trade regulations… (Enter to send, Shift+Enter for newline)"
+        rows="2"
+        :disabled="thinking"
+        class="flex-1 text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none disabled:opacity-50">
+      </textarea>
+      <button @click="send()" :disabled="thinking || !input.trim()"
+              class="self-end bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors flex-shrink-0">
+        Send
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function chatPage() {
+  return {
+    messages: [],
+    input: '',
+    thinking: false,
+    error: null,
+    indexedCount: 0,
+    hints: [
+      'How do ASEAN countries regulate cross-border data transfers?',
+      'Compare e-commerce liability rules across jurisdictions.',
+      'What does RCEP say about digital trade?',
+    ],
+
+    async init() {
+      try { const s = await getChatStats(); this.indexedCount = s.indexed_provisions; } catch {}
+    },
+
+    async send() {
+      const msg = this.input.trim();
+      if (!msg || this.thinking) return;
+      this.input = '';
+      this.error = null;
+      this.messages.push({ role: 'user', content: msg });
+      this.thinking = true;
+      this.$nextTick(() => this.scrollBottom());
+
+      try {
+        const res = await sendChat(msg);
+        this.messages.push({
+          role: 'assistant',
+          content: res.message,
+          citations: res.citations,
+          expert_used: res.expert_used,
+        });
+      } catch (e) {
+        this.error = e.message;
+      }
+      this.thinking = false;
+      this.$nextTick(() => this.scrollBottom());
+    },
+
+    clearChat() { this.messages = []; this.error = null; },
+
+    scrollBottom() {
+      const el = this.$refs.msgContainer;
+      if (el) el.scrollTop = el.scrollHeight;
+    },
+
+    categoryBadgeClass, labelCategory,
+  };
+}
+</script>
+</body>
+</html>
