@@ -12,9 +12,9 @@ from api import documents, extractions, chat
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Pre-warm the embedding model in a background thread so first query is fast
+    # Pre-warm the embedding model in the background — server accepts requests immediately
     from services.vector_store import get_collection
-    await asyncio.to_thread(get_collection)
+    asyncio.create_task(asyncio.to_thread(get_collection))
     yield
 
 
