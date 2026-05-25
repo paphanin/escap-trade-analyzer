@@ -1,4 +1,4 @@
-# ESCAP Digital Trade Regulatory Analyzer
+# LexanTrade — Digital Trade Regulatory Analyzer
 
 AI pipeline for discovering, extracting, and querying digital trade regulations across Asia-Pacific jurisdictions.
 

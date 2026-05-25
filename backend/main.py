@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ESCAP Digital Trade Regulatory Analyzer",
+    title="LexanTrade — Digital Trade Regulatory Analyzer",
     version="1.0.0",
     lifespan=lifespan,
 )
